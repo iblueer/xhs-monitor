@@ -32,7 +32,6 @@ class XHSMonitor:
             f"告警时间：{time_str}"
         )
         self.wecom.send_text(content)
-        exit(-1)
     
     def get_latest_notes(self, user_id: str) -> List[dict]:
         """
@@ -42,16 +41,14 @@ class XHSMonitor:
         """
         try:
             notes = self.client.get_user_notes(user_id)
-            
-            # 检查API返回的错误信息
-            if not notes.get('success'):
+            if not notes.get('notes'):
                 error_msg = notes.get('msg', '未知错误')
                 print(f"获取用户笔记失败: {notes}")
                 self.error_count += 1
 
                 if self.error_count >= MONITOR_CONFIG["ERROR_COUNT"]:
                     self.send_error_notification(f"API请求失败\n详细信息：{error_msg}")
-                    self.error_count = 0
+                    exit(-1)
                 return []
             
             self.error_count = 0  # 成功获取数据后重置错误计数
@@ -60,7 +57,6 @@ class XHSMonitor:
         except Exception as e:
             error_msg = str(e)
             print(f"获取用户笔记失败: {error_msg}")
-            self.send_error_notification(f"程序执行异常\n详细信息：{error_msg}")
             return []
 
     def send_note_notification(self, note_data: dict):
@@ -105,8 +101,6 @@ class XHSMonitor:
             except Exception as e:
                 error_msg = str(e)
                 print(f"监控过程发生错误: {error_msg}")
-                self.send_error_notification(f"监控过程异常\n详细信息：{error_msg}")
-                
             time.sleep(interval)
 
 def main():
