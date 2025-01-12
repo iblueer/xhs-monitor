@@ -28,6 +28,10 @@ cp config.example.py config.py
 ```bash
 python monitor.py
 ```
+## 教程
+
+[追女神必备！使用 Python 构建小红书用户动态监控系统](https://mp.weixin.qq.com/s/2Y2mIPuofTUAdkOsdGmTGA)
+
 ## 贡献指南
 
 欢迎提交 Issue 和 Pull Request 来帮助改进项目。
