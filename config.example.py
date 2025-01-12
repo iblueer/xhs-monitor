@@ -13,5 +13,6 @@ WECOM_CONFIG = {
 # 监控配置
 MONITOR_CONFIG = {
     "USER_ID": "要监控的用户ID",
-    "CHECK_INTERVAL": 60,  # 建议至少60秒以上
+    "CHECK_INTERVAL": 5,  # 建议至少5秒以上
+    "ERROR_COUNT": 10,  # 连续错误次数
 } 

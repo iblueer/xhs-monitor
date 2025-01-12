@@ -40,23 +40,23 @@ class XHSMonitor:
         :return: 笔记列表
         """
         try:
-            notes = self.client.get_user_notes(user_id)
-            if not notes.get('notes'):
-                error_msg = notes.get('msg', '未知错误')
-                print(f"获取用户笔记失败: {notes}")
-                self.error_count += 1
-
-                if self.error_count >= MONITOR_CONFIG["ERROR_COUNT"]:
-                    self.send_error_notification(f"API请求失败\n详细信息：{error_msg}")
-                    exit(-1)
-                return []
-            
-            self.error_count = 0  # 成功获取数据后重置错误计数
-            return notes.get('notes', [])
+            res_data = self.client.get_user_notes(user_id)
+            self.error_count = 0
+            return res_data.get('notes', [])
             
         except Exception as e:
             error_msg = str(e)
+
             print(f"获取用户笔记失败: {error_msg}")
+
+            time.sleep(60)
+
+            self.error_count += 1
+
+            if self.error_count >= MONITOR_CONFIG["ERROR_COUNT"]:
+                self.send_error_notification(f"API 请求失败\n详细信息：{error_msg}")
+                exit(-1)
+
             return []
 
     def send_note_notification(self, note_data: dict):
@@ -81,7 +81,7 @@ class XHSMonitor:
         
         self.wecom.send_text(content)
 
-    def monitor_user(self, user_id: str, interval: int = MONITOR_CONFIG["CHECK_INTERVAL"]):
+    def monitor_user(self, user_id: str, interval: int):
         """
         监控用户动态
         :param user_id: 用户ID
