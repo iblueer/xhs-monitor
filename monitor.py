@@ -5,7 +5,7 @@ from config import XHS_CONFIG, WECOM_CONFIG, MONITOR_CONFIG
 from utils import xhs_sign
 from db import Database
 from wecom import WecomMessage
-import random
+from comment_generator import CommentGenerator
 
 class XHSMonitor:
     def __init__(self, cookie: str, corpid: str, agentid: int, secret: str):
@@ -20,6 +20,7 @@ class XHSMonitor:
         self.wecom = WecomMessage(corpid, agentid, secret)
         self.db = Database()
         self.error_count = 0
+        self.comment_generator = CommentGenerator()
         
     def send_error_notification(self, error_msg: str):
         """
@@ -75,21 +76,49 @@ class XHSMonitor:
             print(f"点赞失败: {e}")
             return False
 
-    def comment_note(self, note_id: str) -> bool:
+    def get_note_detail(self, note_id: str, xsec: str) -> dict:
+        """
+        获取笔记详细信息
+        :param note_id: 笔记ID
+        :return: 笔记详细信息
+        """
+        try:
+            uri = '/api/sns/web/v1/feed'
+            data = {"source_note_id":note_id,"image_formats":["jpg","webp","avif"],"extra":{"need_body_topic":"1"},"xsec_source":"pc_search","xsec_token": xsec}
+            res = self.client.post(uri, data=data)
+            note_detail = res["items"][0]["note_card"]
+            return note_detail
+        except Exception as e:
+            print(f"获取笔记详情失败: {e}")
+            return {}
+
+    def comment_note(self, note_id: str, note_data: dict) -> dict:
         """
         评论笔记
         :param note_id: 笔记ID
-        :return: 是否成功
+        :param note_data: 笔记数据
+        :return: 评论结果
         """
         try:
-            time.sleep(MONITOR_CONFIG["COMMENT_DELAY"])  # 添加延迟，避免操作过快
-            comment = random.choice(MONITOR_CONFIG["COMMENTS"])
+            time.sleep(MONITOR_CONFIG["COMMENT_DELAY"])
+            
+            note_detail = self.get_note_detail(note_id, note_data.get('xsec_token', ''))
+            
+            title = note_detail.get('title', '')
+            content = note_detail.get('desc', '')
+            
+            note_type = '视频' if note_detail.get('type') == 'video' else '图文'
+            content = f"这是一个{note_type}笔记。{content}"
+            
+            comment = self.comment_generator.generate_comment(title, content)
+            
             self.client.comment_note(note_id, comment)
+            
             print(f"评论成功: {note_id} - {comment}")
-            return True
+            return { "comment_status": True, "comment_content": comment }
         except Exception as e:
             print(f"评论失败: {e}")
-            return False
+            return { "comment_status": False, "comment_content": "" }
 
     def interact_with_note(self, note_data: dict) -> dict:
         """
@@ -112,11 +141,12 @@ class XHSMonitor:
 
         result["like_status"] = self.like_note(note_id)
         
-    
-        comment = random.choice(MONITOR_CONFIG["COMMENTS"])
-        result["comment_content"] = comment
-        result["comment_status"] = self.comment_note(note_id)
-            
+        comment_result = self.comment_note(note_id, note_data)
+
+        result["comment_status"] = comment_result["comment_status"]
+        
+        result["comment_content"] = comment_result["comment_content"]
+        
         return result
 
     def send_note_notification(self, note_data: dict, interact_result: dict = None):
