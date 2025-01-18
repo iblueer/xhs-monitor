@@ -32,7 +32,8 @@ python monitor.py
 ```
 ## 教程
 
-[追女神必备！使用 Python 构建小红书用户动态监控系统](https://mp.weixin.qq.com/s/2Y2mIPuofTUAdkOsdGmTGA)
+[追女神必备！使用 Python 构建小红书用户动态监控系统](https://mp.weixin.qq.com/s/2Y2mIPuofTUAdkOsdGmTGA)  
+
 [追女神必备！使用 Python 构建小红书用户动态监控系统（二）- 实现自动点赞和评论功能](https://mp.weixin.qq.com/s/cwIXvP6Fx2gv7l0L2GDs1A)
 
 ## 贡献指南
