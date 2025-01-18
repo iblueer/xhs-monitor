@@ -57,3 +57,16 @@ class Database:
             ))
             conn.commit()
             return True
+    
+    def get_user_notes_count(self, user_id: str) -> int:
+        """
+        获取数据库中某用户的笔记数量
+        :param user_id: 用户ID
+        :return: 笔记数量
+        """
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT COUNT(*) FROM notes WHERE user_id = ?", (user_id,))
+            count = cursor.fetchone()[0]
+            print(f"用户 {user_id} 的笔记数量: {count}")
+            return count or 0

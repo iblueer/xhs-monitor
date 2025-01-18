@@ -194,13 +194,28 @@ class XHSMonitor:
         while True:
             try:
                 latest_notes = self.get_latest_notes(user_id)
-
-                for note in latest_notes:
-                    if self.db.add_note_if_not_exists(note):
-                        print(f"发现新笔记: {note.get('display_title')}")
-                        interact_result = self.interact_with_note(note)
-                        self.send_note_notification(note, interact_result)
+                
+                existing_notes = self.db.get_user_notes_count(user_id)
+                is_first_monitor = existing_notes == 0 and len(latest_notes) > 1
+                
+                if is_first_monitor:
+                    welcome_msg = (
+                        f"欢迎使用 xhs-monitor 系统\n"
+                        f"监控用户：{latest_notes[0].get('user', {}).get('nickname', user_id)}\n"
+                        f"首次监控某用户时，不会对历史笔记进行自动点赞和评论，仅保存笔记记录\n"
+                        f"以防止被系统以及用户发现"
+                    )
+                    self.wecom.send_text(welcome_msg)
                     
+                    for note in latest_notes:
+                        self.db.add_note_if_not_exists(note)
+                else:
+                    for note in latest_notes:
+                        if self.db.add_note_if_not_exists(note):
+                            print(f"发现新笔记: {note.get('display_title')}")
+                            interact_result = self.interact_with_note(note)
+                            self.send_note_notification(note, interact_result)
+                        
             except Exception as e:
                 error_msg = str(e)
                 print(f"监控过程发生错误: {error_msg}")
