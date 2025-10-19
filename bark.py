@@ -9,7 +9,7 @@ class BarkClient:
         self.sound = sound
         self.icon = icon
 
-    def send(self, title: str, body: str, url: str = "") -> bool:
+    def send(self, title: str, body: str, url: str = "", group: str = None) -> bool:
         if not self.device_key:
             print("Bark device key missing, notification skipped")
             return False
@@ -21,8 +21,9 @@ class BarkClient:
 
         if url:
             payload["url"] = url
-        if self.group:
-            payload["group"] = self.group
+        target_group = group if group is not None else self.group
+        if target_group:
+            payload["group"] = target_group
         if self.sound:
             payload["sound"] = self.sound
         if self.icon:

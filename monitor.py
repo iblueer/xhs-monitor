@@ -7,7 +7,7 @@ from xhs import XhsClient
 from bark import BarkClient
 from config import BARK_CONFIG, MONITOR_CONFIG, MONITOR_TARGETS, XHS_CONFIG
 from db import Database
-from utils import parse_timestamp, xhs_sign
+from utils import xhs_sign
 
 class XHSMonitor:
     DAILY_SECONDS = 86400
@@ -28,12 +28,13 @@ class XHSMonitor:
         self.error_limit = MONITOR_CONFIG.get("ERROR_COUNT", 10)
         self.error_wait = MONITOR_CONFIG.get("ERROR_RETRY_WAIT", 60)
         self.hot_gate_days = MONITOR_CONFIG.get("HOT_GATE_DAYS", 5)
+        self.first_run_window_hours = MONITOR_CONFIG.get("FIRST_RUN_WINDOW_HOURS", 24)
         self.next_hot_gate_check = time.time()
         
     def send_error_notification(self, error_msg: str):
         time_str = time.strftime('%Y-%m-%d %H:%M:%S')
         body = f"错误信息：{error_msg}\n告警时间：{time_str}"
-        self.notifier.send("xhs-monitor 异常告警", body)
+        self.notifier.send("异常告警", body, group="exception")
     
     def get_user_notes(self, user_id: str) -> List[dict]:
         try:
@@ -82,6 +83,9 @@ class XHSMonitor:
         last_time_str = self.db.get_latest_note_time(user_id)
         last_time = self._to_datetime(last_time_str) if last_time_str else None
         first_run = last_time is None
+        window_start = None
+        if first_run:
+            window_start = datetime.utcnow() - timedelta(hours=self.first_run_window_hours)
 
         for note in notes:
             published_at = self._extract_datetime(note)
@@ -90,9 +94,12 @@ class XHSMonitor:
             note_record["published_time"] = published_str
             self.db.add_note_if_not_exists(note_record)
 
-            if first_run or not published_at:
+            if not published_at:
                 continue
-            if last_time and published_at <= last_time:
+            if first_run:
+                if window_start and published_at < window_start:
+                    continue
+            elif last_time and published_at <= last_time:
                 continue
 
             title = note.get('display_title') or note.get('title') or ''
@@ -103,8 +110,9 @@ class XHSMonitor:
 
             url = f"https://www.xiaohongshu.com/explore/{note.get('note_id')}"
             body = f"命中关键词：{', '.join(matched)}\n标题：{title}"
-            title_text = f"【重要更新提醒】{target.get('nickname', user_id)} 有新动态"
-            self.notifier.send(title_text, body, url)
+            group = "重要更新提醒"
+            title_text = f"{target.get('nickname', user_id)} 有新动态"
+            self.notifier.send(title_text, body, url, group=group)
 
     def process_hot_gate(self):
         since = datetime.utcnow() - timedelta(days=self.hot_gate_days)
@@ -126,8 +134,9 @@ class XHSMonitor:
                     continue
                 url = f"https://www.xiaohongshu.com/explore/{note_id}"
                 body = f"点赞数：{like_count}\n时间：{published_at.strftime('%Y-%m-%d %H:%M:%S')}"
-                title_text = f"【点赞达标提醒】{target.get('nickname', user_id)} 达到 {hot_gate}"
-                if self.notifier.send(title_text, body, url):
+                group = "点赞达标提醒"
+                title_text = f"{target.get('nickname', user_id)} 达到 {hot_gate}"
+                if self.notifier.send(title_text, body, url, group=group):
                     self.db.mark_hot_gate_notified(note_id, user_id, like_count)
 
     def _extract_timestamp(self, note: Dict) -> Optional[int]:
@@ -151,7 +160,7 @@ class XHSMonitor:
         ts = self._extract_timestamp(note)
         if ts:
             try:
-                return datetime.fromtimestamp(ts)
+                return datetime.utcfromtimestamp(ts)
             except Exception:
                 return None
         text = note.get('published_time') or note.get('time')

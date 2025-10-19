@@ -19,6 +19,7 @@ MONITOR_CONFIG = {
     "ERROR_COUNT": 10,  # 连续错误次数阈值
     "ERROR_RETRY_WAIT": 60,  # API 调用失败后的等待时间（秒）
     "HOT_GATE_DAYS": 5,  # 点赞达标检查的时间窗口（天）
+    "FIRST_RUN_WINDOW_HOURS": 24,  # 初次运行仅关注最近24小时笔记
 }
 
 # Bark 推送配置
