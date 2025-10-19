@@ -180,8 +180,29 @@ class XHSMonitor:
         if value is None:
             detail = note.get('interact_info') or {}
             value = detail.get('liked_count')
+        return self._parse_like_count(value)
+
+    def _parse_like_count(self, raw) -> int:
+        if raw is None:
+            return 0
+        if isinstance(raw, (int, float)):
+            return int(raw)
+        if not isinstance(raw, str):
+            return 0
+
+        text = raw.strip().lower().replace(',', '')
+        multiplier = 1
+
+        if text.endswith('万') or text.endswith('w'):
+            multiplier = 10000
+            text = text[:-1]
+        elif text.endswith('千') or text.endswith('k'):
+            multiplier = 1000
+            text = text[:-1]
+
         try:
-            return int(value)
+            amount = float(text)
+            return int(amount * multiplier)
         except Exception:
             return 0
 
