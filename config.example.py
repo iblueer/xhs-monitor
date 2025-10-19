@@ -3,30 +3,31 @@ XHS_CONFIG = {
     "COOKIE": "你的小红书Cookie",  # 必需包含 a1、web_session 和 webId 字段
 }
 
-# 企业微信应用配置
-WECOM_CONFIG = {
-    "CORPID": "你的企业ID",  # 企业ID
-    "AGENTID": "你的应用ID",  # 应用ID
-    "SECRET": "你的应用Secret",  # 应用的Secret
-}
+# 监控对象配置
+MONITOR_TARGETS = [
+    {
+        "nickname": "恋与深空",
+        "id": "5c9cd8ca000000001202cba7",
+        "keyword": ["思念", "生日"],
+        "hot_gate": 40000,
+    },
+]
 
 # 监控配置
 MONITOR_CONFIG = {
-    "USER_ID": "要监控的用户ID",
-    "CHECK_INTERVAL": 5,  # 建议至少5秒以上
-    "ERROR_COUNT": 10,  # 连续错误次数
-    "AUTO_INTERACT": True,  # 是否开启自动互动
-    "FALLBACK_COMMENTS": [  # 随机选择一条评论
-        "太棒了！",
-        "喜欢这篇笔记",
-        "我来啦~",
-        "路过~",
-        "感谢分享",
-        "期待更新~",
-        "支持支持！"
-    ],
-    "LIKE_DELAY": 2,  # 点赞延迟(秒)
-    "COMMENT_DELAY": 5,  # 评论延迟(秒)
+    "CHECK_INTERVAL": 1800,  # 轮询频率，单位秒
+    "ERROR_COUNT": 10,  # 连续错误次数阈值
+    "ERROR_RETRY_WAIT": 60,  # API 调用失败后的等待时间（秒）
+    "HOT_GATE_DAYS": 5,  # 点赞达标检查的时间窗口（天）
+}
+
+# Bark 推送配置
+BARK_CONFIG = {
+    "BASE_URL": "https://api.day.app",
+    "DEVICE_KEY": "你的设备密钥",
+    "GROUP": "xhs-monitor",
+    "SOUND": "glass",
+    "ICON": "",
 }
 
 # LLM配置

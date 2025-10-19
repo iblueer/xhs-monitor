@@ -52,4 +52,4 @@ class CommentGenerator:
         """
         当 API 调用失败时的备用评论
         """
-        return random.choice(MONITOR_CONFIG.get('FALLBACK_COMMENTS', [])) 
+        return random.choice(MONITOR_CONFIG.get('FALLBACK_COMMENTS', []))

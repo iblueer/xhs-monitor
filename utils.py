@@ -1,5 +1,6 @@
 from playwright.sync_api import sync_playwright
 from time import sleep
+from datetime import datetime
 
 def xhs_sign(uri, data=None, a1="", web_session=""):
     for _ in range(10):
@@ -30,3 +31,12 @@ def xhs_sign(uri, data=None, a1="", web_session=""):
             # 这儿有时会出现 window._webmsxyw is not a function 或未知跳转错误，因此加一个失败重试趴
             pass
     raise Exception("重试了这么多次还是无法签名成功，寄寄寄")
+
+
+def parse_timestamp(timestamp: int) -> str:
+    if not timestamp:
+        return ""
+    try:
+        return datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d %H:%M:%S")
+    except Exception:
+        return ""

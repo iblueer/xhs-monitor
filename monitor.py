@@ -1,46 +1,41 @@
-from xhs import XhsClient
 import time
-from typing import List
-from config import XHS_CONFIG, WECOM_CONFIG, MONITOR_CONFIG
-from utils import xhs_sign
+from datetime import datetime, timedelta
+from typing import Dict, List, Optional
+
+from xhs import XhsClient
+
+from bark import BarkClient
+from config import BARK_CONFIG, MONITOR_CONFIG, MONITOR_TARGETS, XHS_CONFIG
 from db import Database
-from wecom import WecomMessage
-from comment_generator import CommentGenerator
+from utils import parse_timestamp, xhs_sign
 
 class XHSMonitor:
-    def __init__(self, cookie: str, corpid: str, agentid: int, secret: str):
-        """
-        初始化监控类
-        :param cookie: 小红书cookie
-        :param corpid: 企业ID
-        :param agentid: 应用ID
-        :param secret: 应用的Secret
-        """
+    DAILY_SECONDS = 86400
+
+    def __init__(self, cookie: str, monitor_targets: List[Dict]):
         self.client = XhsClient(cookie=cookie, sign=xhs_sign)
-        self.wecom = WecomMessage(corpid, agentid, secret)
+        self.notifier = BarkClient(
+            base_url=BARK_CONFIG.get("BASE_URL", "https://api.day.app"),
+            device_key=BARK_CONFIG.get("DEVICE_KEY", ""),
+            group=BARK_CONFIG.get("GROUP", ""),
+            sound=BARK_CONFIG.get("SOUND", ""),
+            icon=BARK_CONFIG.get("ICON", ""),
+        )
         self.db = Database()
         self.error_count = 0
-        self.comment_generator = CommentGenerator()
+        self.monitor_targets = monitor_targets
+        self.check_interval = MONITOR_CONFIG.get("CHECK_INTERVAL", 1800)
+        self.error_limit = MONITOR_CONFIG.get("ERROR_COUNT", 10)
+        self.error_wait = MONITOR_CONFIG.get("ERROR_RETRY_WAIT", 60)
+        self.hot_gate_days = MONITOR_CONFIG.get("HOT_GATE_DAYS", 5)
+        self.next_hot_gate_check = time.time()
         
     def send_error_notification(self, error_msg: str):
-        """
-        发送错误通知
-        :param error_msg: 错误信息
-        """
         time_str = time.strftime('%Y-%m-%d %H:%M:%S')
-        content = (
-            "小红书监控异常告警\n"
-            f"错误信息：{error_msg}\n"
-            f"告警时间：{time_str}"
-        )
-        self.wecom.send_text(content)
+        body = f"错误信息：{error_msg}\n告警时间：{time_str}"
+        self.notifier.send("xhs-monitor 异常告警", body)
     
-    def get_latest_notes(self, user_id: str) -> List[dict]:
-        """
-        获取用户最新笔记
-        :param user_id: 用户ID
-        :return: 笔记列表
-        """
+    def get_user_notes(self, user_id: str) -> List[dict]:
         try:
             res_data = self.client.get_user_notes(user_id)
             self.error_count = 0
@@ -51,188 +46,152 @@ class XHSMonitor:
 
             print(f"获取用户笔记失败: {error_msg}")
 
-            time.sleep(60)
+            time.sleep(self.error_wait)
 
             self.error_count += 1
 
-            if self.error_count >= MONITOR_CONFIG["ERROR_COUNT"]:
+            if self.error_count >= self.error_limit:
                 self.send_error_notification(f"API 请求失败\n详细信息：{error_msg}")
                 exit(-1)
 
             return []
 
-    def like_note(self, note_id: str) -> bool:
-        """
-        点赞笔记
-        :param note_id: 笔记ID
-        :return: 是否成功
-        """
-        try:
-            time.sleep(MONITOR_CONFIG["LIKE_DELAY"])  # 添加延迟，避免操作过快
-            self.client.like_note(note_id)
-            print(f"点赞成功: {note_id}")
-            return True
-        except Exception as e:
-            print(f"点赞失败: {e}")
-            return False
-
-    def get_note_detail(self, note_id: str, xsec: str) -> dict:
-        """
-        获取笔记详细信息
-        :param note_id: 笔记ID
-        :return: 笔记详细信息
-        """
-        try:
-            uri = '/api/sns/web/v1/feed'
-            data = {"source_note_id":note_id,"image_formats":["jpg","webp","avif"],"extra":{"need_body_topic":"1"},"xsec_source":"pc_search","xsec_token": xsec}
-            res = self.client.post(uri, data=data)
-            note_detail = res["items"][0]["note_card"]
-            return note_detail
-        except Exception as e:
-            print(f"获取笔记详情失败: {e}")
-            return {}
-
-    def comment_note(self, note_id: str, note_data: dict) -> dict:
-        """
-        评论笔记
-        :param note_id: 笔记ID
-        :param note_data: 笔记数据
-        :return: 评论结果
-        """
-        try:
-            time.sleep(MONITOR_CONFIG["COMMENT_DELAY"])
-            
-            note_detail = self.get_note_detail(note_id, note_data.get('xsec_token', ''))
-            
-            title = note_detail.get('title', '')
-            content = note_detail.get('desc', '')
-            
-            note_type = '视频' if note_detail.get('type') == 'video' else '图文'
-            content = f"这是一个{note_type}笔记。{content}"
-            
-            comment = self.comment_generator.generate_comment(title, content)
-            
-            self.client.comment_note(note_id, comment)
-            
-            print(f"评论成功: {note_id} - {comment}")
-            return { "comment_status": True, "comment_content": comment }
-        except Exception as e:
-            print(f"评论失败: {e}")
-            return { "comment_status": False, "comment_content": "" }
-
-    def interact_with_note(self, note_data: dict) -> dict:
-        """
-        与笔记互动（点赞+评论）
-        :param note_data: 笔记数据
-        :return: 互动结果
-        """
-        result = {
-            "like_status": False,
-            "comment_status": False,
-            "comment_content": ""
-        }
-        
-        if not MONITOR_CONFIG.get("AUTO_INTERACT"):
-            return result
-
-        note_id = note_data.get('note_id')
-        if not note_id:
-            return result
-
-        result["like_status"] = self.like_note(note_id)
-        
-        comment_result = self.comment_note(note_id, note_data)
-
-        result["comment_status"] = comment_result["comment_status"]
-        
-        result["comment_content"] = comment_result["comment_content"]
-        
-        return result
-
-    def send_note_notification(self, note_data: dict, interact_result: dict = None):
-        """
-        发送笔记通知
-        :param note_data: 笔记数据
-        :param interact_result: 互动结果
-        """
-        note_url = f"https://www.xiaohongshu.com/explore/{note_data.get('note_id')}"
-        user_name = note_data.get('user', {}).get('nickname', '未知用户')
-        title = note_data.get('display_title', '无标题')
-        type = note_data.get('type', '未知类型')
-        time_str = time.strftime('%Y-%m-%d %H:%M:%S')
-        
-        content = [
-            "小红书用户发布新笔记",
-            f"用户：{user_name}",
-            f"标题：{title}",
-            f"链接：{note_url}",
-            f"类型：{type}",
-        ]
-        
-        if interact_result and MONITOR_CONFIG.get("AUTO_INTERACT"):
-            like_status = "成功" if interact_result["like_status"] else "失败"
-            content.append(f"点赞：{like_status}")
-            
-            if interact_result["comment_status"]:
-                content.append(f"评论：成功")
-                content.append(f"评论内容：{interact_result['comment_content']}")
-            else:
-                content.append(f"评论：失败")
-        
-        content.append(f"监控时间：{time_str}")
-        
-        self.wecom.send_text("\n".join(content))
-
-    def monitor_user(self, user_id: str, interval: int):
-        """
-        监控用户动态
-        :param user_id: 用户ID
-        :param interval: 检查间隔(秒)
-        """
-        print(f"开始监控用户: {user_id}")
-        
+    def run(self):
+        print("开始监控目标列表")
         while True:
+            for target in self.monitor_targets:
+                try:
+                    self.process_new_posts(target)
+                except Exception as exc:
+                    print(f"处理 {target.get('nickname')} 新笔记失败: {exc}")
+            now = time.time()
+            if now >= self.next_hot_gate_check:
+                try:
+                    self.process_hot_gate()
+                except Exception as exc:
+                    print(f"执行点赞达标检查失败: {exc}")
+                self.next_hot_gate_check = now + self.DAILY_SECONDS
+            time.sleep(self.check_interval)
+
+    def process_new_posts(self, target: Dict):
+        user_id = target.get("id")
+        notes = self.get_user_notes(user_id)
+        if not notes:
+            return
+        notes.sort(key=lambda x: self._extract_timestamp(x) or 0)
+        last_time_str = self.db.get_latest_note_time(user_id)
+        last_time = self._to_datetime(last_time_str) if last_time_str else None
+        first_run = last_time is None
+
+        for note in notes:
+            published_at = self._extract_datetime(note)
+            published_str = published_at.strftime("%Y-%m-%d %H:%M:%S") if published_at else ""
+            note_record = dict(note)
+            note_record["published_time"] = published_str
+            self.db.add_note_if_not_exists(note_record)
+
+            if first_run or not published_at:
+                continue
+            if last_time and published_at <= last_time:
+                continue
+
+            title = note.get('display_title') or note.get('title') or ''
+            keywords = target.get('keyword', [])
+            matched = [kw for kw in keywords if kw and kw in title]
+            if not matched:
+                continue
+
+            url = f"https://www.xiaohongshu.com/explore/{note.get('note_id')}"
+            body = f"命中关键词：{', '.join(matched)}\n标题：{title}"
+            title_text = f"【重要更新提醒】{target.get('nickname', user_id)} 有新动态"
+            self.notifier.send(title_text, body, url)
+
+    def process_hot_gate(self):
+        since = datetime.utcnow() - timedelta(days=self.hot_gate_days)
+        for target in self.monitor_targets:
+            user_id = target.get("id")
+            notes = self.get_user_notes(user_id)
+            if not notes:
+                continue
+            hot_gate = target.get("hot_gate", 0)
+            for note in notes:
+                published_at = self._extract_datetime(note)
+                if not published_at or published_at < since:
+                    continue
+                like_count = self._extract_like_count(note)
+                if like_count < hot_gate:
+                    continue
+                note_id = note.get('note_id')
+                if self.db.is_hot_gate_notified(note_id):
+                    continue
+                url = f"https://www.xiaohongshu.com/explore/{note_id}"
+                body = f"点赞数：{like_count}\n时间：{published_at.strftime('%Y-%m-%d %H:%M:%S')}"
+                title_text = f"【点赞达标提醒】{target.get('nickname', user_id)} 达到 {hot_gate}"
+                if self.notifier.send(title_text, body, url):
+                    self.db.mark_hot_gate_notified(note_id, user_id, like_count)
+
+    def _extract_timestamp(self, note: Dict) -> Optional[int]:
+        value = note.get('time') or note.get('timestamp')
+        if not value:
+            card = note.get('note_card') or {}
+            value = card.get('time') or card.get('timestamp')
+        if isinstance(value, str):
+            if value.isdigit():
+                return int(value)
             try:
-                latest_notes = self.get_latest_notes(user_id)
-                
-                existing_notes = self.db.get_user_notes_count(user_id)
-                is_first_monitor = existing_notes == 0 and len(latest_notes) > 1
-                
-                if is_first_monitor:
-                    welcome_msg = (
-                        f"欢迎使用 xhs-monitor 系统\n"
-                        f"监控用户：{latest_notes[0].get('user', {}).get('nickname', user_id)}\n"
-                        f"首次监控某用户时，不会对历史笔记进行自动点赞和评论，仅保存笔记记录\n"
-                        f"以防止被系统以及用户发现"
-                    )
-                    self.wecom.send_text(welcome_msg)
-                    
-                    for note in latest_notes:
-                        self.db.add_note_if_not_exists(note)
-                else:
-                    for note in latest_notes:
-                        if self.db.add_note_if_not_exists(note):
-                            print(f"发现新笔记: {note.get('display_title')}")
-                            interact_result = self.interact_with_note(note)
-                            self.send_note_notification(note, interact_result)
-                        
-            except Exception as e:
-                error_msg = str(e)
-                print(f"监控过程发生错误: {error_msg}")
-            time.sleep(interval)
+                dt = datetime.fromisoformat(value)
+                return int(dt.timestamp())
+            except Exception:
+                return None
+        if isinstance(value, (int, float)):
+            return int(value)
+        return None
+
+    def _extract_datetime(self, note: Dict) -> Optional[datetime]:
+        ts = self._extract_timestamp(note)
+        if ts:
+            try:
+                return datetime.fromtimestamp(ts)
+            except Exception:
+                return None
+        text = note.get('published_time') or note.get('time')
+        if isinstance(text, str):
+            for fmt in ('%Y-%m-%d %H:%M:%S', '%Y-%m-%dT%H:%M:%S'):
+                try:
+                    return datetime.strptime(text, fmt)
+                except Exception:
+                    continue
+        return None
+
+    def _extract_like_count(self, note: Dict) -> int:
+        value = note.get('liked_count')
+        if value is None:
+            card = note.get('note_card') or {}
+            value = card.get('liked_count')
+        if value is None:
+            detail = note.get('interact_info') or {}
+            value = detail.get('liked_count')
+        try:
+            return int(value)
+        except Exception:
+            return 0
+
+    def _to_datetime(self, value: str) -> Optional[datetime]:
+        if not value:
+            return None
+        for fmt in ('%Y-%m-%d %H:%M:%S', '%Y-%m-%dT%H:%M:%S'):
+            try:
+                return datetime.strptime(value, fmt)
+            except Exception:
+                continue
+        return None
 
 def main():
     monitor = XHSMonitor(
-        cookie=XHS_CONFIG["COOKIE"],
-        corpid=WECOM_CONFIG["CORPID"],
-        agentid=WECOM_CONFIG["AGENTID"],
-        secret=WECOM_CONFIG["SECRET"]
+        cookie=XHS_CONFIG.get("COOKIE", ""),
+        monitor_targets=MONITOR_TARGETS,
     )
-
-    monitor.monitor_user(
-        user_id=MONITOR_CONFIG["USER_ID"],
-        interval=MONITOR_CONFIG["CHECK_INTERVAL"]
-    )
+    monitor.run()
 
 if __name__ == "__main__":
     main() 
