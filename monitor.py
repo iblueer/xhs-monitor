@@ -136,10 +136,23 @@ class XHSMonitor:
             hot_gate = target.get("hot_gate", 0)
             logging.info("检查点赞阈值：%s | 阈值：%s", target.get('nickname', user_id), hot_gate)
             for note in notes:
-                published_at = self._extract_datetime(note)
-                if not published_at or published_at < since:
-                    continue
                 note_id = note.get('note_id')
+                stored_time_str = self.db.get_note_published_time(note_id)
+                published_at = self._extract_datetime(note)
+                if not published_at and stored_time_str:
+                    fallback_time = self._to_datetime(stored_time_str)
+                    if fallback_time:
+                        logging.debug(
+                            "API 未提供发布时间，使用数据库记录：note_id=%s | published_time=%s",
+                            note_id,
+                            fallback_time,
+                        )
+                        published_at = fallback_time
+                if not published_at:
+                    logging.debug("无法解析发布时间，跳过点赞检查：%s", note_id)
+                    continue
+                if published_at < since:
+                    continue
 
                 note_record = json.loads(json.dumps(note))
                 note_record.setdefault("user", {})
@@ -147,9 +160,8 @@ class XHSMonitor:
                 note_record["published_time"] = published_at.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
                 self.db.add_note_if_not_exists(note_record)
 
-                stored_time = self.db.get_note_published_time(note_id)
-                if stored_time:
-                    stored_dt = self._to_datetime(stored_time)
+                if stored_time_str:
+                    stored_dt = self._to_datetime(stored_time_str)
                     if stored_dt and published_at > stored_dt:
                         logging.debug(
                             "检测到发布时间更新：note_id=%s | old=%s | new=%s",

@@ -54,7 +54,7 @@ class Database:
             cursor = conn.cursor()
 
             cursor.execute(
-                'SELECT note_id FROM notes WHERE note_id = ?',
+                'SELECT note_id, last_like_count FROM notes WHERE note_id = ?',
                 (note_data.get('note_id'),),
             )
             exists = cursor.fetchone()
@@ -66,13 +66,23 @@ class Database:
 
             like_count = note_data.get('liked_count')
             if like_count is None:
-                like_count = (note_data.get('note_card') or {}).get('liked_count')
+                raw_card = note_data.get('note_card') or {}
+                like_count = raw_card.get('liked_count')
             if like_count is None:
-                like_count = (note_data.get('interact_info') or {}).get('liked_count')
-            if isinstance(like_count, str) and like_count.isdigit():
-                like_count = int(like_count)
+                raw_interact = note_data.get('interact_info') or {}
+                like_count = raw_interact.get('liked_count')
+            if isinstance(like_count, str):
+                stripped = like_count.strip()
+                if stripped.isdigit():
+                    like_count = int(stripped)
+                else:
+                    try:
+                        like_count = int(float(stripped))
+                    except Exception:
+                        like_count = None
 
             if exists:
+                stored_like = exists[1] if isinstance(exists, tuple) and len(exists) > 1 else None
                 cursor.execute(
                     '''
                     UPDATE notes
@@ -81,7 +91,7 @@ class Database:
                     ''',
                     (user_id, title, published_time, note_type, note_data.get('note_id')),
                 )
-                if like_count is not None:
+                if like_count is not None and like_count != stored_like:
                     cursor.execute(
                         "UPDATE notes SET last_like_count = ? WHERE note_id = ?",
                         (like_count, note_data.get('note_id')),
