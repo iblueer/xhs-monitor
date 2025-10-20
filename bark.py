@@ -1,17 +1,25 @@
 import requests
+from typing import Iterable, List, Union
 
 
 class BarkClient:
-    def __init__(self, base_url: str, device_key: str, group: str = "", sound: str = "", icon: str = ""):
+    def __init__(
+        self,
+        base_url: str,
+        device_key: Union[str, Iterable[str]],
+        group: str = "",
+        sound: str = "",
+        icon: str = "",
+    ):
         self.base_url = base_url.rstrip("/")
-        self.device_key = device_key
+        self.device_keys = self._normalize_keys(device_key)
         self.group = group
         self.sound = sound
         self.icon = icon
 
     def send(self, title: str, body: str, url: str = "", group: str = None) -> bool:
-        if not self.device_key:
-            print("Bark device key missing, notification skipped")
+        if not self.device_keys:
+            print("Bark device keys missing, notification skipped")
             return False
 
         payload = {
@@ -29,12 +37,28 @@ class BarkClient:
         if self.icon:
             payload["icon"] = self.icon
 
-        try:
-            endpoint = f"{self.base_url}/{self.device_key}/"
-            response = requests.post(endpoint, json=payload, timeout=10)
-            if response.status_code // 100 == 2:
-                return True
-            print(f"Bark push failed: {response.status_code} {response.text}")
-        except Exception as exc:
-            print(f"Bark push exception: {exc}")
-        return False
+        results = []
+        for key in self.device_keys:
+            try:
+                endpoint = f"{self.base_url}/{key}/"
+                response = requests.post(endpoint, json=payload, timeout=10)
+                if response.status_code // 100 == 2:
+                    results.append(True)
+                else:
+                    print(f"Bark push failed ({key}): {response.status_code} {response.text}")
+                    results.append(False)
+            except Exception as exc:
+                print(f"Bark push exception ({key}): {exc}")
+                results.append(False)
+
+        return any(results)
+
+    def _normalize_keys(self, keys: Union[str, Iterable[str]]) -> List[str]:
+        if isinstance(keys, str):
+            return [keys.strip()] if keys.strip() else []
+        normalized: List[str] = []
+        for item in keys:
+            item = (item or "").strip()
+            if item:
+                normalized.append(item)
+        return normalized

@@ -20,12 +20,14 @@ MONITOR_CONFIG = {
     "ERROR_RETRY_WAIT": 60,  # API 调用失败后的等待时间（秒）
     "HOT_GATE_DAYS": 5,  # 点赞达标检查的时间窗口（天）
     "FIRST_RUN_WINDOW_HOURS": 24,  # 初次运行仅关注最近24小时笔记
+    "LOG_DIR": "logs",
+    "LOG_LEVEL": "INFO",
 }
 
 # Bark 推送配置
 BARK_CONFIG = {
     "BASE_URL": "https://api.day.app",
-    "DEVICE_KEY": "你的设备密钥",
+    "DEVICE_KEY": ["你的设备密钥"],
     "GROUP": "xhs-monitor",
     "SOUND": "glass",
     "ICON": "",
