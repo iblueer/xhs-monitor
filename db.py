@@ -24,7 +24,8 @@ class Database:
                     title TEXT,
                     published_time TEXT,
                     discovered_time TEXT NOT NULL,
-                    type TEXT
+                    type TEXT,
+                    last_like_count INTEGER
                 )
                 '''
             )
@@ -39,6 +40,7 @@ class Database:
                 '''
             )
             self._ensure_column(cursor, 'notes', 'published_time', 'TEXT')
+            self._ensure_column(cursor, 'notes', 'last_like_count', 'INTEGER')
             conn.commit()
     
     def add_note_if_not_exists(self, note_data: dict) -> bool:
@@ -50,15 +52,25 @@ class Database:
 
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
-            
-            cursor.execute('SELECT note_id FROM notes WHERE note_id = ?', 
-                         (note_data.get('note_id'),))
+
+            cursor.execute(
+                'SELECT note_id FROM notes WHERE note_id = ?',
+                (note_data.get('note_id'),),
+            )
             exists = cursor.fetchone()
 
             published_time = note_data.get('published_time', note_data.get('time', ''))
             title = note_data.get('display_title', note_data.get('title', '无标题'))
             note_type = note_data.get('type', 'normal')
             user_id = note_data.get('user', {}).get('user_id')
+
+            like_count = note_data.get('liked_count')
+            if like_count is None:
+                like_count = (note_data.get('note_card') or {}).get('liked_count')
+            if like_count is None:
+                like_count = (note_data.get('interact_info') or {}).get('liked_count')
+            if isinstance(like_count, str) and like_count.isdigit():
+                like_count = int(like_count)
 
             if exists:
                 cursor.execute(
@@ -69,20 +81,28 @@ class Database:
                     ''',
                     (user_id, title, published_time, note_type, note_data.get('note_id')),
                 )
+                if like_count is not None:
+                    cursor.execute(
+                        "UPDATE notes SET last_like_count = ? WHERE note_id = ?",
+                        (like_count, note_data.get('note_id')),
+                    )
                 conn.commit()
                 return False
 
-            cursor.execute('''
+            cursor.execute(
+                '''
                 INSERT INTO notes (
-                    note_id, user_id, title, published_time, discovered_time, type
-                ) VALUES (?, ?, ?, ?, ?, ?)
-            ''', (
+                    note_id, user_id, title, published_time, discovered_time, type, last_like_count
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                '''
+            , (
                 note_data.get('note_id'),
                 user_id,
                 title,
                 published_time,
                 datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                note_type
+                note_type,
+                like_count
             ))
             conn.commit()
             return True
@@ -108,6 +128,48 @@ class Database:
             )
             result = cursor.fetchone()[0]
             return result or ""
+
+    def get_note_published_time(self, note_id: str) -> str:
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT published_time FROM notes WHERE note_id = ?",
+                (note_id,),
+            )
+            result = cursor.fetchone()
+            if result:
+                return result[0] or ""
+            return ""
+
+    def update_published_time(self, note_id: str, published_time: str):
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "UPDATE notes SET published_time = ? WHERE note_id = ?",
+                (published_time, note_id),
+            )
+            conn.commit()
+
+    def update_last_like_count(self, note_id: str, like_count: int):
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "UPDATE notes SET last_like_count = ? WHERE note_id = ?",
+                (like_count, note_id),
+            )
+            conn.commit()
+
+    def get_last_like_count(self, note_id: str):
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT last_like_count FROM notes WHERE note_id = ?",
+                (note_id,),
+            )
+            result = cursor.fetchone()
+            if result:
+                return result[0]
+            return None
 
     def mark_hot_gate_notified(self, note_id: str, user_id: str, like_count: int):
         with sqlite3.connect(self.db_path) as conn:

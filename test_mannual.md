@@ -33,7 +33,23 @@
    pyenv activate xhs-monitor-3.13
    python monitor.py
    ```
-   按 Ctrl+B → D 分离；tmux attach -t xhs-monitor 回去查看。
+   先按`Ctrl+B` → 再按`D` 脱离会话
+
+   分离后可以看日志，应能看到 点赞数据、点赞未达标等输出：
+   ```
+   tail -f logs/monitor.log
+   ```
+   
+   返回会话：
+   ```
+   tmux attach -t xhs-monitor 
+   ```
+
+   停止当前tmux会话：
+   ```
+   tmux kill-session
+   ```
+
    - 或写简单的 systemd 服务（按需）。
 
 6. 日志与维护
