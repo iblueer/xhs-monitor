@@ -1,6 +1,31 @@
+import os
+from pathlib import Path
+
+
+def _load_cookie() -> str:
+    """Load XHS cookie from environment or fallback file."""
+
+    env_cookie = os.getenv("XHS_COOKIE")
+    if env_cookie:
+        return env_cookie.strip()
+
+    cookie_file = os.getenv("XHS_COOKIE_FILE")
+    candidate_path = Path(cookie_file) if cookie_file else Path(__file__).with_name("cookie.txt")
+
+    if candidate_path.exists():
+        content = candidate_path.read_text(encoding="utf-8").strip()
+        if content:
+            return content
+
+    raise RuntimeError(
+        "XHS cookie not provided. Set XHS_COOKIE environment variable or place "
+        "a non-empty cookie string in cookie.txt (or specify XHS_COOKIE_FILE)."
+    )
+
+
 # 小红书配置
 XHS_CONFIG = {
-    "COOKIE": "你的小红书Cookie",  # 必需包含 a1、web_session 和 webId 字段
+    "COOKIE": _load_cookie(),  # 必需包含 a1、web_session 和 webId 字段
 }
 
 # 监控对象配置
